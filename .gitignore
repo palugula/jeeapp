@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# Environment files
+backend/.env
+
+# Uploads (user content - not committed)
+uploads/
+
+# Study content (user's personal files - not committed)
+study-content/
+
+# Mongo init script (not needed after first run)
+mongo-init.js
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
