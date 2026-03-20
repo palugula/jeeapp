@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Video, FileText, BookOpen, Play, CheckCircle, Circle, ExternalLink, ArrowUp, ArrowDown } from 'lucide-react';
-import { getChapter, getChapterItems, toggleComplete, reorderItems } from '../lib/api.js';
+import {
+  ArrowLeft, Video, FileText, BookOpen, Play, CheckCircle, Circle,
+  ExternalLink, Plus, GripVertical, X, Loader2
+} from 'lucide-react';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy, arrayMove, useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  getChapter, getChapterItems, toggleComplete, reorderItems,
+  addYoutubeVideo, addManualLecture
+} from '../lib/api.js';
 import ChapterInfoForm from '../components/chapters/ChapterInfoForm.jsx';
 import ProgressBar from '../components/common/ProgressBar.jsx';
 import VideoPlayer from '../components/player/VideoPlayer.jsx';
@@ -18,91 +31,204 @@ function formatDuration(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function ItemCard({ item, index, total, onMoveUp, onMoveDown, onUpdate }) {
+// ── Add YouTube modal ──────────────────────────────────────────────────────────
+function AddYoutubeModal({ chapterId, onClose, onAdded }) {
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!url) { setError('URL is required'); return; }
+    setLoading(true); setError('');
+    try {
+      await addYoutubeVideo(chapterId, { url, name: name || undefined, type: 'lecture' });
+      onAdded();
+      onClose();
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+      <div className="w-full max-w-md rounded-xl p-6 border" style={{ background: '#1F2937', borderColor: '#262C36' }}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-text-card">Add YouTube Video</h3>
+          <button onClick={onClose} className="text-text-muted hover:text-text-card"><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-sm text-text-secondary mb-1 block">YouTube URL *</label>
+            <input type="url" value={url} onChange={e => setUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..." required />
+          </div>
+          <div>
+            <label className="text-sm text-text-secondary mb-1 block">Custom Name (optional)</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Video title" />
+          </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg text-sm text-text-secondary border hover:bg-accent"
+              style={{ borderColor: '#262C36' }}>Cancel</button>
+            <button type="submit" disabled={loading}
+              className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white bg-primary"
+              style={{ opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'Adding...' : 'Add Video'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Add Manual Lecture modal ───────────────────────────────────────────────────
+function AddManualModal({ chapterId, type, onClose, onAdded }) {
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) { setError('Name is required'); return; }
+    setLoading(true); setError('');
+    try {
+      await addManualLecture(chapterId, { name: name.trim(), type });
+      onAdded();
+      onClose();
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  const label = type === 'lecture' ? 'Manual Lecture' : type === 'notes' ? 'Notes Item' : 'Worksheet Item';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+      <div className="w-full max-w-sm rounded-xl p-6 border" style={{ background: '#1F2937', borderColor: '#262C36' }}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-text-card">Add {label}</h3>
+          <button onClick={onClose} className="text-text-muted hover:text-text-card"><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-sm text-text-secondary mb-1 block">Name *</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+              placeholder="e.g. Kinematics Part 1" autoFocus />
+          </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg text-sm text-text-secondary border hover:bg-accent"
+              style={{ borderColor: '#262C36' }}>Cancel</button>
+            <button type="submit" disabled={loading}
+              className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white bg-primary"
+              style={{ opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'Adding...' : 'Add'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Sortable item row ──────────────────────────────────────────────────────────
+function SortableItemRow({ item, onUpdate }) {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging
+  } = useSortable({ id: item._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1
+  };
+
   const [completed, setCompleted] = useState(item.completed);
   const [toggling, setToggling] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
 
-  const handleToggle = async () => {
+  const handleToggle = async (e) => {
+    e.stopPropagation();
     setToggling(true);
     try {
       await toggleComplete(item._id, !completed);
       setCompleted(!completed);
       onUpdate();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setToggling(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setToggling(false); }
   };
 
   const isVideo = item.itemType === 'local_video' || item.itemType === 'youtube';
-  const progress = isVideo && item.duration > 0
-    ? Math.min(100, Math.round(((item.currentTime || 0) / item.duration) * 100))
-    : completed ? 100 : 0;
+  const isManual = item.itemType === 'manual';
+  const videoProgress = isVideo && item.duration > 0
+    ? Math.min(100, Math.round(((item.currentTime || 0) / item.duration) * 100)) : null;
 
   return (
     <>
       <div
-        className="flex items-center gap-3 p-4 rounded-xl border group transition-colors hover:border-primary/30"
-        style={{ background: '#1E293B', borderColor: '#262C36' }}
+        ref={setNodeRef}
+        style={{ ...style, background: '#1E293B', borderColor: '#262C36' }}
+        className="flex items-center gap-3 p-3.5 rounded-xl border group transition-colors hover:border-primary/30"
       >
-        {/* Reorder */}
-        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onMoveUp} disabled={index === 0} className="p-0.5 text-text-muted disabled:opacity-30 hover:text-text-card">
-            <ArrowUp size={12} />
-          </button>
-          <button onClick={onMoveDown} disabled={index === total - 1} className="p-0.5 text-text-muted disabled:opacity-30 hover:text-text-card">
-            <ArrowDown size={12} />
-          </button>
-        </div>
+        {/* Drag handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="text-text-muted hover:text-text-card cursor-grab active:cursor-grabbing flex-shrink-0 touch-none opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={e => e.stopPropagation()}
+        >
+          <GripVertical size={14} />
+        </button>
 
         {/* Icon */}
-        <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ background: isVideo ? 'rgba(99, 102, 241, 0.15)' : 'rgba(245, 158, 11, 0.15)' }}>
-          {isVideo ? (
-            <Play size={16} style={{ color: item.itemType === 'youtube' ? '#EF4444' : '#6366F1' }} />
-          ) : (
-            <FileText size={16} style={{ color: '#F59E0B' }} />
-          )}
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: isVideo ? 'rgba(99,102,241,0.15)' : 'rgba(245,158,11,0.15)' }}>
+          {isVideo
+            ? <Play size={14} style={{ color: item.itemType === 'youtube' ? '#EF4444' : '#6366F1' }} />
+            : <FileText size={14} style={{ color: '#F59E0B' }} />
+          }
         </div>
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <p className={`font-medium truncate ${completed ? 'line-through text-text-muted' : 'text-text-card'}`}>
+          <p className={`text-sm font-medium truncate ${completed ? 'line-through text-text-muted' : 'text-text-card'}`}>
             {item.name}
           </p>
-          {isVideo && (
-            <div className="flex items-center gap-3 mt-1">
-              <ProgressBar value={progress} height={3} className="w-32" />
-              <span className="text-xs text-text-muted">
-                {item.currentTime ? formatDuration(item.currentTime) : '0:00'}
-                {item.duration ? ` / ${formatDuration(item.duration)}` : ''}
-              </span>
-            </div>
-          )}
-          {item.itemType === 'youtube' && (
-            <span className="text-xs text-red-400 mt-0.5 block">YouTube</span>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {videoProgress !== null && (
+              <>
+                <ProgressBar value={videoProgress} height={3} className="w-24" />
+                <span className="text-xs text-text-muted">
+                  {item.currentTime ? formatDuration(item.currentTime) : '0:00'}
+                  {item.duration ? ` / ${formatDuration(item.duration)}` : ''}
+                </span>
+              </>
+            )}
+            {item.itemType === 'youtube' && <span className="text-xs text-red-400">YouTube</span>}
+            {isManual && <span className="text-xs text-text-muted">Manual</span>}
+          </div>
         </div>
 
         {item.duration > 0 && (
-          <span className="text-sm text-text-muted flex-shrink-0">{formatDuration(item.duration)}</span>
+          <span className="text-xs text-text-muted flex-shrink-0">{formatDuration(item.duration)}</span>
         )}
 
+        {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => {
-              if (isVideo) setPlayerOpen(true);
-              else {
-                const url = item.filePath ? `/api/files/document/${item.filePath}` : '#';
-                window.open(url, '_blank');
+              if (isVideo || isManual) {
+                setPlayerOpen(true);
+              } else if (item.filePath) {
+                window.open(`/api/files/document/${item.filePath}`, '_blank');
               }
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-primary hover:opacity-90 transition-opacity"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-primary hover:opacity-90 transition-opacity"
           >
-            {isVideo ? <Play size={12} /> : <ExternalLink size={12} />}
-            {isVideo ? 'Play' : 'Open'}
+            {isVideo ? <><Play size={11} /> Play</> : <><ExternalLink size={11} /> Open</>}
           </button>
 
           <button
@@ -110,7 +236,7 @@ function ItemCard({ item, index, total, onMoveUp, onMoveDown, onUpdate }) {
             disabled={toggling}
             className={`p-1.5 rounded-lg transition-colors ${completed ? 'text-green-400' : 'text-text-muted hover:text-green-400'}`}
           >
-            {completed ? <CheckCircle size={18} /> : <Circle size={18} />}
+            {toggling ? <Loader2 size={16} className="animate-spin" /> : completed ? <CheckCircle size={16} /> : <Circle size={16} />}
           </button>
         </div>
       </div>
@@ -126,31 +252,51 @@ function ItemCard({ item, index, total, onMoveUp, onMoveDown, onUpdate }) {
   );
 }
 
-function ItemSection({ title, icon: Icon, items, onMoveUp, onMoveDown, onUpdate }) {
-  if (!items.length) return null;
+// ── DnD item list for one tab ──────────────────────────────────────────────────
+function SortableItemList({ items, chapterId, type, onUpdate }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const [localItems, setLocalItems] = useState(items);
+  useEffect(() => { setLocalItems(items); }, [items]);
+
+  const handleDragEnd = async ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const oldIdx = localItems.findIndex(i => i._id === active.id);
+    const newIdx = localItems.findIndex(i => i._id === over.id);
+    const reordered = arrayMove(localItems, oldIdx, newIdx);
+    setLocalItems(reordered);
+    try {
+      const updates = reordered.map((item, i) => ({ id: item._id, order: i }));
+      await reorderItems(chapterId, updates);
+    } catch (err) {
+      console.error(err);
+      setLocalItems(items);
+    }
+  };
+
+  if (!localItems.length) {
+    return (
+      <div className="text-center py-8 text-text-muted text-sm">
+        No {type} content yet.
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      <h3 className="flex items-center gap-2 text-base font-bold text-text-card">
-        <Icon size={18} className="text-primary" />
-        {title} ({items.length})
-      </h3>
-      <div className="space-y-2">
-        {items.map((item, i) => (
-          <ItemCard
-            key={item._id}
-            item={item}
-            index={i}
-            total={items.length}
-            onMoveUp={() => onMoveUp(i)}
-            onMoveDown={() => onMoveDown(i)}
-            onUpdate={onUpdate}
-          />
-        ))}
-      </div>
-    </div>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={localItems.map(i => i._id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          {localItems.map(item => (
+            <SortableItemRow key={item._id} item={item} onUpdate={onUpdate} />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
   );
 }
+
+// ── Main ChapterPage ───────────────────────────────────────────────────────────
+const TABS = ['Lectures', 'Notes', 'Worksheets'];
 
 export default function ChapterPage() {
   const { id } = useParams();
@@ -158,6 +304,8 @@ export default function ChapterPage() {
   const [chapter, setChapter] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('Lectures');
+  const [modal, setModal] = useState(null); // 'youtube' | 'manual' | null
 
   const load = async () => {
     try {
@@ -176,25 +324,13 @@ export default function ChapterPage() {
 
   useEffect(() => { load(); }, [id]);
 
-  const handleItemUpdate = async () => {
+  const handleUpdate = async () => {
     const [chapterData, itemsData] = await Promise.all([
       getChapter(id),
       getChapterItems(id)
     ]);
     setChapter(chapterData);
     setItems(itemsData);
-  };
-
-  const moveItem = async (type, index, direction) => {
-    const typeItems = items.filter(i => i.type === type).sort((a, b) => a.order - b.order);
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= typeItems.length) return;
-
-    const reordered = [...typeItems];
-    [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
-    const updates = reordered.map((item, i) => ({ id: item._id, order: i }));
-    await reorderItems(id, updates);
-    await handleItemUpdate();
   };
 
   if (loading) {
@@ -209,16 +345,20 @@ export default function ChapterPage() {
     return <div className="text-center text-text-muted py-12">Chapter not found.</div>;
   }
 
-  const lectures = items.filter(i => i.type === 'lecture').sort((a, b) => a.order - b.order);
-  const notes = items.filter(i => i.type === 'notes').sort((a, b) => a.order - b.order);
+  const lectures   = items.filter(i => i.type === 'lecture').sort((a, b) => a.order - b.order);
+  const notes      = items.filter(i => i.type === 'notes').sort((a, b) => a.order - b.order);
   const worksheets = items.filter(i => i.type === 'worksheet').sort((a, b) => a.order - b.order);
+  const tabItems   = { Lectures: lectures, Notes: notes, Worksheets: worksheets };
 
   const color = SUBJECT_COLORS[chapter.subject] || '#6366F1';
   const { stats = {} } = chapter;
+  const progress = stats.lectureProgress ?? stats.progress ?? 0;
+
+  const TAB_ICONS = { Lectures: Video, Notes: FileText, Worksheets: BookOpen };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Back Button */}
+      {/* Back */}
       <button
         onClick={() => navigate(`/subject/${chapter.subject}`)}
         className="flex items-center gap-2 text-text-muted hover:text-text-card transition-colors text-sm"
@@ -227,13 +367,11 @@ export default function ChapterPage() {
         Back to {chapter.subject}
       </button>
 
-      {/* Chapter Header */}
+      {/* Header card */}
       <div className="rounded-xl p-6 border" style={{ background: '#161B22', borderColor: '#262C36' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <div className="flex items-center gap-2 text-sm text-text-muted mb-1">
-              <span style={{ color }}>{chapter.subject}</span>
-            </div>
+            <div className="text-sm text-text-muted mb-1" style={{ color }}>{chapter.subject}</div>
             <h1 className="text-2xl font-bold text-text-card">{chapter.name}</h1>
             <div className="flex items-center gap-2 flex-wrap mt-2">
               {chapter.eisenhowerLabel && <EisenhowerBadge value={chapter.eisenhowerLabel} />}
@@ -242,65 +380,123 @@ export default function ChapterPage() {
                   chapter.confidence === 'high' ? 'bg-green-900 text-green-400' :
                   chapter.confidence === 'moderate' ? 'bg-yellow-900 text-yellow-400' :
                   'bg-red-900 text-red-400'
-                }`}>
-                  {chapter.confidence} confidence
-                </span>
+                }`}>{chapter.confidence} confidence</span>
               )}
             </div>
           </div>
           <div className="text-right">
-            <div className="text-3xl font-bold" style={{ color }}>{stats.progress || 0}%</div>
-            <p className="text-xs text-text-muted mt-1">{stats.completedCount}/{stats.totalItems} done</p>
+            <div className="text-3xl font-bold" style={{ color }}>{progress}%</div>
+            <p className="text-xs text-text-muted mt-1">
+              {stats.completedLectures ?? 0}/{stats.totalLectures ?? 0} lectures done
+            </p>
+            {(stats.totalNotes ?? 0) > 0 && (
+              <p className="text-xs text-text-muted">
+                {stats.completedNotes ?? 0}/{stats.totalNotes ?? 0} notes
+              </p>
+            )}
           </div>
         </div>
-
         <div className="mt-4">
-          <ProgressBar value={stats.progress || 0} color={color} height={8} />
+          <ProgressBar value={progress} color={color} height={8} />
         </div>
-
         <div className="flex gap-6 mt-4 text-sm text-text-muted">
-          <span className="flex items-center gap-1"><Video size={14} /> {stats.lectureCount || 0} lectures</span>
-          <span className="flex items-center gap-1"><FileText size={14} /> {stats.notesCount || 0} notes</span>
-          <span className="flex items-center gap-1"><BookOpen size={14} /> {stats.worksheetCount || 0} worksheets</span>
+          <span className="flex items-center gap-1"><Video size={14} /> {stats.totalLectures ?? 0} lectures</span>
+          <span className="flex items-center gap-1"><FileText size={14} /> {stats.totalNotes ?? 0} notes</span>
+          <span className="flex items-center gap-1"><BookOpen size={14} /> {stats.totalWorksheets ?? 0} worksheets</span>
         </div>
       </div>
 
       {/* Chapter Info Form */}
       <ChapterInfoForm chapter={chapter} onUpdate={(updated) => setChapter(ch => ({ ...ch, ...updated }))} />
 
-      {/* Content Sections */}
-      <ItemSection
-        title="Lectures"
-        icon={Video}
-        items={lectures}
-        onMoveUp={(i) => moveItem('lecture', i, -1)}
-        onMoveDown={(i) => moveItem('lecture', i, 1)}
-        onUpdate={handleItemUpdate}
-      />
-
-      <ItemSection
-        title="Notes"
-        icon={FileText}
-        items={notes}
-        onMoveUp={(i) => moveItem('notes', i, -1)}
-        onMoveDown={(i) => moveItem('notes', i, 1)}
-        onUpdate={handleItemUpdate}
-      />
-
-      <ItemSection
-        title="Worksheets"
-        icon={BookOpen}
-        items={worksheets}
-        onMoveUp={(i) => moveItem('worksheet', i, -1)}
-        onMoveDown={(i) => moveItem('worksheet', i, 1)}
-        onUpdate={handleItemUpdate}
-      />
-
-      {items.length === 0 && (
-        <div className="text-center py-12 text-text-muted">
-          <p>No content found for this chapter.</p>
-          <p className="text-sm mt-1">Add files to the chapter folder and rescan, or add YouTube videos.</p>
+      {/* Tabs */}
+      <div className="rounded-xl border overflow-hidden" style={{ background: '#161B22', borderColor: '#262C36' }}>
+        {/* Tab bar */}
+        <div className="flex border-b" style={{ borderColor: '#262C36' }}>
+          {TABS.map(tab => {
+            const Icon = TAB_ICONS[tab];
+            const count = tabItems[tab].length;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2 ${
+                  activeTab === tab
+                    ? 'text-primary border-primary'
+                    : 'text-text-muted border-transparent hover:text-text-card'
+                }`}
+              >
+                <Icon size={15} />
+                {tab}
+                {count > 0 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full"
+                    style={{ background: activeTab === tab ? 'rgba(99,102,241,0.2)' : '#262C36', color: activeTab === tab ? '#6366F1' : '#64748B' }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
+
+        {/* Add buttons */}
+        <div className="flex gap-2 p-4 border-b" style={{ borderColor: '#262C36' }}>
+          {activeTab === 'Lectures' && (
+            <>
+              <button
+                onClick={() => setModal('youtube')}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white border"
+                style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}
+              >
+                <Plus size={13} /> YouTube Video
+              </button>
+              <button
+                onClick={() => setModal('manual')}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-accent text-text-secondary"
+                style={{ borderColor: '#262C36' }}
+              >
+                <Plus size={13} /> Manual Lecture
+              </button>
+            </>
+          )}
+          {(activeTab === 'Notes' || activeTab === 'Worksheets') && (
+            <button
+              onClick={() => setModal('manual')}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-accent text-text-secondary"
+              style={{ borderColor: '#262C36' }}
+            >
+              <Plus size={13} /> Add {activeTab === 'Notes' ? 'Notes' : 'Worksheet'} Item
+            </button>
+          )}
+        </div>
+
+        {/* Tab content */}
+        <div className="p-4">
+          <SortableItemList
+            key={activeTab}
+            items={tabItems[activeTab]}
+            chapterId={id}
+            type={activeTab.toLowerCase()}
+            onUpdate={handleUpdate}
+          />
+        </div>
+      </div>
+
+      {/* Modals */}
+      {modal === 'youtube' && (
+        <AddYoutubeModal
+          chapterId={id}
+          onClose={() => setModal(null)}
+          onAdded={handleUpdate}
+        />
+      )}
+      {modal === 'manual' && (
+        <AddManualModal
+          chapterId={id}
+          type={activeTab === 'Lectures' ? 'lecture' : activeTab === 'Notes' ? 'notes' : 'worksheet'}
+          onClose={() => setModal(null)}
+          onAdded={handleUpdate}
+        />
       )}
     </div>
   );

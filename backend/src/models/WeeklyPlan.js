@@ -1,33 +1,20 @@
 import mongoose from 'mongoose';
 
-const planItemSchema = new mongoose.Schema({
+const taskSchema = new mongoose.Schema({
   chapterId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Chapter',
     required: true
   },
-  itemId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ContentItem',
-    default: null
-  },
   subject: String,
   chapterName: String,
-  itemName: String,
-  estimatedMinutes: {
-    type: Number,
-    default: 60
-  },
-  completed: {
-    type: Boolean,
-    default: false
-  }
+  taskTitle: { type: String, default: '' },
+  startDate: { type: String, required: true }, // YYYY-MM-DD
+  endDate:   { type: String, required: true }, // YYYY-MM-DD (>= startDate)
+  startTime: { type: String, default: '' },    // HH:MM (24h)
+  endTime:   { type: String, default: '' },    // HH:MM (24h)
+  completed: { type: Boolean, default: false }
 }, { _id: true });
-
-const dayPlanSchema = new mongoose.Schema({
-  date: String, // YYYY-MM-DD
-  items: [planItemSchema]
-}, { _id: false });
 
 const weeklyPlanSchema = new mongoose.Schema({
   weekStart: {
@@ -35,9 +22,7 @@ const weeklyPlanSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  plans: [dayPlanSchema]
-}, {
-  timestamps: true
-});
+  tasks: [taskSchema]
+}, { timestamps: true });
 
 export default mongoose.model('WeeklyPlan', weeklyPlanSchema);

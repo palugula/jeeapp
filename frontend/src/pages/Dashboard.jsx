@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart2, Calendar, RefreshCw, Upload } from 'lucide-react';
+import { BarChart2, Calendar, Upload } from 'lucide-react';
 import { useApp } from '../contexts/AppContext.jsx';
 import CountdownTimer from '../components/dashboard/CountdownTimer.jsx';
 import HeatMap from '../components/dashboard/HeatMap.jsx';
@@ -39,34 +39,46 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Hero Banner */}
-      <div className="relative rounded-2xl overflow-hidden" style={{ ...bannerStyle, minHeight: 200 }}>
-        <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.55)' }} />
-        <div className="relative z-10 p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            {settings.profilePicture ? (
-              <img
-                src={settings.profilePicture}
-                alt="Profile"
-                className="w-20 h-20 rounded-full object-cover border-4 border-primary shadow-lg"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-white text-3xl font-bold border-4 border-white/20 shadow-lg">
-                {(settings.userName || 'J')[0].toUpperCase()}
-              </div>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold text-white">
-                Hello, {settings.userName || 'JEE Aspirant'}!
-              </h1>
-              <p className="text-white/70 text-sm mt-1 italic max-w-md">"{quote}"</p>
-            </div>
-          </div>
-
-          <div className="bg-black/30 rounded-xl p-4 backdrop-blur-sm border border-white/10">
+      {/* Profile + Banner — social media style */}
+      <div className="rounded-2xl overflow-visible" style={{ position: 'relative' }}>
+        {/* Banner */}
+        <div
+          className="rounded-2xl overflow-hidden relative"
+          style={{ ...bannerStyle, height: 180 }}
+        >
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+          {/* Countdown top-right inside banner */}
+          <div className="absolute top-4 right-4 bg-black/30 rounded-xl p-3 backdrop-blur-sm border border-white/10">
             <CountdownTimer examDate={settings.jeeExamDate} />
           </div>
         </div>
+
+        {/* Profile pic overlapping banner at bottom-left */}
+        <div className="absolute" style={{ bottom: -32, left: 24 }}>
+          {settings.profilePicture ? (
+            <img
+              src={settings.profilePicture}
+              alt="Profile"
+              className="w-20 h-20 rounded-full object-cover border-4 shadow-xl"
+              style={{ borderColor: '#0B0C10' }}
+            />
+          ) : (
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-bold border-4 shadow-xl"
+              style={{ background: '#6366F1', borderColor: '#0B0C10' }}
+            >
+              {(settings.userName || 'J')[0].toUpperCase()}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Name + quote — below banner, offset for profile pic */}
+      <div className="pt-10 pl-2">
+        <h1 className="text-xl font-bold text-text-card">
+          {settings.userName || 'JEE Aspirant'}
+        </h1>
+        <p className="text-text-muted text-sm italic mt-1">"{quote}"</p>
       </div>
 
       {/* Subject Cards */}
@@ -98,7 +110,7 @@ export default function Dashboard() {
           <HeatMap data={heatmap} />
         </div>
 
-        {/* Quick Links */}
+        {/* Quick Actions + Progress */}
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-xl p-5 border" style={{ background: '#161B22', borderColor: '#262C36' }}>
             <h2 className="text-base font-bold text-text-card mb-4">Quick Actions</h2>
@@ -130,7 +142,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Stats summary */}
           <div className="rounded-xl p-5 border" style={{ background: '#161B22', borderColor: '#262C36' }}>
             <h2 className="text-base font-bold text-text-card mb-3">Overall Progress</h2>
             {subjects.length > 0 ? (
@@ -142,7 +153,7 @@ export default function Dashboard() {
                     <div key={s.name}>
                       <div className="flex justify-between text-xs text-text-muted mb-1">
                         <span>{s.name}</span>
-                        <span>{s.completedItems}/{s.totalItems}</span>
+                        <span>{s.completedLectures}/{s.lectureCount} lectures</span>
                       </div>
                       <div className="w-full h-2 rounded-full" style={{ background: '#262C36' }}>
                         <div

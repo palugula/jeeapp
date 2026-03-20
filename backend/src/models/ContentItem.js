@@ -23,7 +23,11 @@ const contentItemSchema = new mongoose.Schema({
   itemType: {
     type: String,
     required: true,
-    enum: ['local_video', 'youtube', 'pdf', 'document']
+    enum: ['local_video', 'youtube', 'pdf', 'document', 'manual']
+  },
+  hasVideo: {
+    type: Boolean,
+    default: true
   },
   name: {
     type: String,

@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, BarChart2, Calendar,
   Settings, ChevronLeft, ChevronRight, FlaskConical,
-  Calculator, Atom
+  Calculator, Atom, StickyNote
 } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext.jsx';
 
@@ -21,13 +21,19 @@ const SUBJECT_COLORS = {
 
 export default function Sidebar({ open, onToggle }) {
   const { subjects } = useApp();
-  const navigate = useNavigate();
 
   const navLinkClass = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${
       isActive
         ? 'bg-primary text-white'
         : 'text-text-secondary hover:bg-accent hover:text-text-card'
+    }`;
+
+  const subNavLinkClass = ({ isActive }) =>
+    `flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200 text-xs ${
+      isActive
+        ? 'text-primary bg-primary/10'
+        : 'text-text-muted hover:bg-accent hover:text-text-card'
     }`;
 
   return (
@@ -76,23 +82,37 @@ export default function Sidebar({ open, onToggle }) {
           const progress = subjectData?.progress || 0;
 
           return (
-            <NavLink key={subject} to={`/subject/${subject}`} className={navLinkClass}>
-              <Icon size={18} className="shrink-0" style={{ color }} />
+            <div key={subject}>
+              <NavLink to={`/subject/${subject}`} end className={navLinkClass}>
+                <Icon size={18} className="shrink-0" style={{ color }} />
+                {open && (
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span>{subject}</span>
+                      <span className="text-xs text-text-muted">{progress}%</span>
+                    </div>
+                    <div className="w-full h-1 rounded-full mt-1" style={{ background: '#262C36' }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${progress}%`, background: color }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </NavLink>
+
+              {/* Notes sub-link — only when sidebar is open */}
               {open && (
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span>{subject}</span>
-                    <span className="text-xs text-text-muted">{progress}%</span>
-                  </div>
-                  <div className="w-full h-1 rounded-full mt-1" style={{ background: '#262C36' }}>
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${progress}%`, background: color }}
-                    />
-                  </div>
-                </div>
+                <NavLink
+                  to={`/subject/${subject}/notes`}
+                  className={subNavLinkClass}
+                  style={{ marginLeft: '28px', marginTop: '2px' }}
+                >
+                  <StickyNote size={13} />
+                  Notes
+                </NavLink>
               )}
-            </NavLink>
+            </div>
           );
         })}
 
