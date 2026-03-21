@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Video, FileText, BookOpen, Play, CheckCircle, Circle,
-  ExternalLink, Plus, GripVertical, X, Loader2
+  ExternalLink, Plus, GripVertical, X, Loader2, StickyNote, Clock, ChevronDown, ChevronRight, Trash2
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors
@@ -13,7 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   getChapter, getChapterItems, toggleComplete, reorderItems,
-  addYoutubeVideo, addManualLecture
+  addYoutubeVideo, addManualLecture, getChapterNotes, deleteNote
 } from '../lib/api.js';
 import ChapterInfoForm from '../components/chapters/ChapterInfoForm.jsx';
 import ProgressBar from '../components/common/ProgressBar.jsx';
@@ -295,8 +295,165 @@ function SortableItemList({ items, chapterId, type, onUpdate }) {
   );
 }
 
+// ── My Notes tab ──────────────────────────────────────────────────────────────
+function formatTime(seconds) {
+  if (seconds === null || seconds === undefined) return null;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function NoteRow({ note, item, onDelete }) {
+  const [deleting, setDeleting] = useState(false);
+  const [playerItem, setPlayerItem] = useState(null);
+
+  const hasTimestamp = note.timestamp !== null && note.timestamp !== undefined;
+  const canSeek = hasTimestamp && item;
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteNote(note._id);
+      onDelete(note._id);
+    } catch (err) { console.error(err); setDeleting(false); }
+  };
+
+  return (
+    <>
+      <div
+        className="flex items-start gap-3 p-3 rounded-lg group transition-colors"
+        style={{ background: '#1A2234' }}
+      >
+        {/* Timestamp badge */}
+        <div className="flex-shrink-0 mt-0.5 w-16">
+          {hasTimestamp ? (
+            <button
+              onClick={() => canSeek && setPlayerItem({ ...item, currentTime: note.timestamp })}
+              disabled={!canSeek}
+              title={canSeek ? `Jump to ${formatTime(note.timestamp)}` : undefined}
+              className={`flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded w-full justify-center transition-colors ${
+                canSeek
+                  ? 'text-primary border border-primary/40 hover:bg-primary hover:text-white cursor-pointer'
+                  : 'text-text-muted border border-transparent cursor-default'
+              }`}
+            >
+              <Clock size={9} />{formatTime(note.timestamp)}
+            </button>
+          ) : (
+            <span className="text-xs text-text-muted pl-1">—</span>
+          )}
+        </div>
+
+        <p className="flex-1 text-sm text-text-card leading-relaxed">{note.content}</p>
+
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canSeek && (
+            <button
+              onClick={() => setPlayerItem({ ...item, currentTime: note.timestamp })}
+              className="p-1 rounded text-text-muted hover:text-primary transition-colors"
+              title="Open video here"
+            >
+              <Play size={12} />
+            </button>
+          )}
+          <button onClick={handleDelete} disabled={deleting}
+            className="p-1 rounded text-text-muted hover:text-red-400 transition-colors">
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+
+      {playerItem && (
+        <VideoPlayer
+          item={playerItem}
+          onClose={() => setPlayerItem(null)}
+          onComplete={() => setPlayerItem(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function ItemNotesGroup({ group, onDeleteNote }) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#262C36' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+        style={{ background: '#161B22' }}
+      >
+        {open ? <ChevronDown size={13} className="text-text-muted" /> : <ChevronRight size={13} className="text-text-muted" />}
+        <StickyNote size={13} className="text-primary flex-shrink-0" />
+        <span className="text-sm font-medium text-text-card flex-1 truncate">{group.itemName}</span>
+        <span className="text-xs text-text-muted flex-shrink-0 ml-2">
+          {group.notes.length} {group.notes.length === 1 ? 'note' : 'notes'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="overflow-y-auto" style={{ background: '#0F1117', maxHeight: '320px' }}>
+          <div className="p-2 space-y-1.5">
+            {group.notes.map(note => (
+              <NoteRow key={note._id} note={note} item={group.item} onDelete={onDeleteNote} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyNotesTab({ chapterId }) {
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getChapterNotes(chapterId)
+      .then(setGroups)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [chapterId]);
+
+  const handleDeleteNote = (noteId) => {
+    setGroups(prev =>
+      prev.map(g => ({ ...g, notes: g.notes.filter(n => n._id !== noteId) }))
+          .filter(g => g.notes.length > 0)
+    );
+  };
+
+  const totalNotes = groups.reduce((s, g) => s + g.notes.length, 0);
+
+  if (loading) {
+    return <div className="py-8 text-center text-text-muted text-sm">Loading notes…</div>;
+  }
+
+  if (!groups.length) {
+    return (
+      <div className="py-12 text-center text-text-muted">
+        <StickyNote size={36} className="mx-auto mb-2 opacity-20" />
+        <p className="text-sm">No notes yet. Add notes while watching lectures.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-text-muted flex items-center gap-1 pb-1">
+        <Clock size={11} /> {totalNotes} notes — click a timestamp to jump to that moment in the video
+      </p>
+      {groups.map(group => (
+        <ItemNotesGroup key={group.itemId} group={group} onDeleteNote={handleDeleteNote} />
+      ))}
+    </div>
+  );
+}
+
 // ── Main ChapterPage ───────────────────────────────────────────────────────────
-const TABS = ['Lectures', 'Notes', 'Worksheets'];
+const TABS = ['Lectures', 'Notes', 'Worksheets', 'My Notes'];
 
 export default function ChapterPage() {
   const { id } = useParams();
@@ -354,7 +511,7 @@ export default function ChapterPage() {
   const { stats = {} } = chapter;
   const progress = stats.lectureProgress ?? stats.progress ?? 0;
 
-  const TAB_ICONS = { Lectures: Video, Notes: FileText, Worksheets: BookOpen };
+  const TAB_ICONS = { Lectures: Video, Notes: FileText, Worksheets: BookOpen, 'My Notes': StickyNote };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -415,20 +572,20 @@ export default function ChapterPage() {
         <div className="flex border-b" style={{ borderColor: '#262C36' }}>
           {TABS.map(tab => {
             const Icon = TAB_ICONS[tab];
-            const count = tabItems[tab].length;
+            const count = tab !== 'My Notes' ? tabItems[tab]?.length ?? 0 : null;
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2 ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors border-b-2 ${
                   activeTab === tab
                     ? 'text-primary border-primary'
                     : 'text-text-muted border-transparent hover:text-text-card'
                 }`}
               >
-                <Icon size={15} />
-                {tab}
-                {count > 0 && (
+                <Icon size={14} />
+                <span className="hidden sm:inline">{tab}</span>
+                {count !== null && count > 0 && (
                   <span className="text-xs px-1.5 py-0.5 rounded-full"
                     style={{ background: activeTab === tab ? 'rgba(99,102,241,0.2)' : '#262C36', color: activeTab === tab ? '#6366F1' : '#64748B' }}>
                     {count}
@@ -439,46 +596,52 @@ export default function ChapterPage() {
           })}
         </div>
 
-        {/* Add buttons */}
-        <div className="flex gap-2 p-4 border-b" style={{ borderColor: '#262C36' }}>
-          {activeTab === 'Lectures' && (
-            <>
-              <button
-                onClick={() => setModal('youtube')}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white border"
-                style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}
-              >
-                <Plus size={13} /> YouTube Video
-              </button>
+        {/* Add buttons — hidden on My Notes tab */}
+        {activeTab !== 'My Notes' && (
+          <div className="flex gap-2 p-4 border-b" style={{ borderColor: '#262C36' }}>
+            {activeTab === 'Lectures' && (
+              <>
+                <button
+                  onClick={() => setModal('youtube')}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white border"
+                  style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}
+                >
+                  <Plus size={13} /> YouTube Video
+                </button>
+                <button
+                  onClick={() => setModal('manual')}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-accent text-text-secondary"
+                  style={{ borderColor: '#262C36' }}
+                >
+                  <Plus size={13} /> Manual Lecture
+                </button>
+              </>
+            )}
+            {(activeTab === 'Notes' || activeTab === 'Worksheets') && (
               <button
                 onClick={() => setModal('manual')}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-accent text-text-secondary"
                 style={{ borderColor: '#262C36' }}
               >
-                <Plus size={13} /> Manual Lecture
+                <Plus size={13} /> Add {activeTab === 'Notes' ? 'Notes' : 'Worksheet'} Item
               </button>
-            </>
-          )}
-          {(activeTab === 'Notes' || activeTab === 'Worksheets') && (
-            <button
-              onClick={() => setModal('manual')}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-accent text-text-secondary"
-              style={{ borderColor: '#262C36' }}
-            >
-              <Plus size={13} /> Add {activeTab === 'Notes' ? 'Notes' : 'Worksheet'} Item
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Tab content */}
         <div className="p-4">
-          <SortableItemList
-            key={activeTab}
-            items={tabItems[activeTab]}
-            chapterId={id}
-            type={activeTab.toLowerCase()}
-            onUpdate={handleUpdate}
-          />
+          {activeTab === 'My Notes' ? (
+            <MyNotesTab chapterId={id} />
+          ) : (
+            <SortableItemList
+              key={activeTab}
+              items={tabItems[activeTab]}
+              chapterId={id}
+              type={activeTab.toLowerCase()}
+              onUpdate={handleUpdate}
+            />
+          )}
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import ContentItem from '../models/ContentItem.js';
 
 const router = express.Router();
 
-// GET /api/notes/item/:itemId  — all notes for one item
+// GET /api/notes/item/:itemId  — all notes for one item (sorted by timestamp)
 router.get('/item/:itemId', async (req, res) => {
   try {
     const notes = await VideoNote.find({ itemId: req.params.itemId })
@@ -67,11 +67,49 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// GET /api/notes/subject/:subject  — all notes grouped by chapter > item
+// Helper — build item map for a set of itemIds
+async function buildItemMap(itemIds) {
+  const items = await ContentItem.find({ _id: { $in: itemIds } });
+  return Object.fromEntries(items.map(i => [i._id.toString(), i.toObject()]));
+}
+
+// GET /api/notes/chapter/:chapterId  — notes grouped by item, includes full item object
+router.get('/chapter/:chapterId', async (req, res) => {
+  try {
+    const notes = await VideoNote.find({ chapterId: req.params.chapterId })
+      .sort({ itemId: 1, timestamp: 1, createdAt: 1 });
+
+    const itemIds = [...new Set(notes.map(n => n.itemId.toString()))];
+    const itemMap = await buildItemMap(itemIds);
+
+    const groups = {};
+    for (const note of notes) {
+      const ik = note.itemId.toString();
+      if (!groups[ik]) {
+        groups[ik] = {
+          itemId: note.itemId,
+          itemName: note.itemName || 'Unknown',
+          item: itemMap[ik] || null,
+          notes: []
+        };
+      }
+      groups[ik].notes.push(note);
+    }
+
+    res.json(Object.values(groups));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/notes/subject/:subject  — notes grouped by chapter > item, includes full item object
 router.get('/subject/:subject', async (req, res) => {
   try {
     const notes = await VideoNote.find({ subject: req.params.subject })
-      .sort({ createdAt: -1 });
+      .sort({ chapterId: 1, itemId: 1, timestamp: 1, createdAt: 1 });
+
+    const itemIds = [...new Set(notes.map(n => n.itemId.toString()))];
+    const itemMap = await buildItemMap(itemIds);
 
     const chapterMap = {};
     for (const note of notes) {
@@ -88,6 +126,7 @@ router.get('/subject/:subject', async (req, res) => {
         chapterMap[ck].items[ik] = {
           itemId: note.itemId,
           itemName: note.itemName || 'Unknown Item',
+          item: itemMap[ik] || null,
           notes: []
         };
       }

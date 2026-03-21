@@ -50,6 +50,7 @@ export const getItemNotes = (itemId) => api.get(`/notes/item/${itemId}`);
 export const addNote = (itemId, data) => api.post(`/notes/item/${itemId}`, data);
 export const updateNote = (id, data) => api.put(`/notes/${id}`, data);
 export const deleteNote = (id) => api.delete(`/notes/${id}`);
+export const getChapterNotes = (chapterId) => api.get(`/notes/chapter/${chapterId}`);
 export const getSubjectNotes = (subject) => api.get(`/notes/subject/${subject}`);
 
 // Settings
