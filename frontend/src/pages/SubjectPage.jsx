@@ -22,9 +22,9 @@ export default function SubjectPage() {
   const { chapters, loading, error, reload, rescan } = useSubjectChapters(subject);
   const color = SUBJECT_COLORS[subject] || '#6366F1';
 
-  const totalItems = chapters.reduce((sum, c) => sum + (c.stats?.totalItems || 0), 0);
-  const completedItems = chapters.reduce((sum, c) => sum + (c.stats?.completedCount || 0), 0);
-  const overallProgress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+  const totalLectures = chapters.reduce((sum, c) => sum + (c.stats?.totalLectures ?? c.stats?.lectureCount ?? 0), 0);
+  const completedLectures = chapters.reduce((sum, c) => sum + (c.stats?.completedLectures ?? 0), 0);
+  const overallProgress = totalLectures > 0 ? Math.round((completedLectures / totalLectures) * 100) : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -36,7 +36,7 @@ export default function SubjectPage() {
             <div>
               <h1 className="text-2xl font-bold text-text-card">{subject}</h1>
               <p className="text-text-muted text-sm">
-                {chapters.length} chapters • {completedItems}/{totalItems} items completed
+                {chapters.length} chapters • {completedLectures}/{totalLectures} lectures completed
               </p>
             </div>
           </div>

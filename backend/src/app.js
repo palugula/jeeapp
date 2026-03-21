@@ -38,6 +38,7 @@ import analyticsRouter from './routes/analytics.js';
 import weeklyPlanRouter from './routes/weeklyPlan.js';
 import settingsRouter from './routes/settings.js';
 import filesRouter from './routes/files.js';
+import videoNotesRouter from './routes/videoNotes.js';
 
 // Routes
 app.use('/api/subjects', subjectsRouter);
@@ -47,6 +48,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/weekly-plan', weeklyPlanRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/files', filesRouter);
+app.use('/api/notes', videoNotesRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

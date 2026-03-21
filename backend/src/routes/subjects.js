@@ -7,20 +7,14 @@ const router = express.Router();
 
 const SUBJECTS = ['Maths', 'Physics', 'Chemistry'];
 
-// GET /api/subjects - list all subjects with stats
+// GET /api/subjects - list all subjects with lecture-only progress
 router.get('/', async (req, res) => {
   try {
     const subjects = await Promise.all(SUBJECTS.map(async (subject) => {
       const chapters = await Chapter.find({ subject }).sort({ order: 1 });
       const chapterIds = chapters.map(c => c._id);
 
-      const totalItems = await ContentItem.countDocuments({ chapterId: { $in: chapterIds } });
-      const completedItems = await ContentItem.countDocuments({
-        chapterId: { $in: chapterIds },
-        completed: true
-      });
-
-      const lectureItems = await ContentItem.countDocuments({
+      const lectureCount = await ContentItem.countDocuments({
         chapterId: { $in: chapterIds },
         type: 'lecture'
       });
@@ -30,14 +24,14 @@ router.get('/', async (req, res) => {
         completed: true
       });
 
-      const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+      const progress = lectureCount > 0
+        ? Math.round((completedLectures / lectureCount) * 100)
+        : 0;
 
       return {
         name: subject,
         chapterCount: chapters.length,
-        totalItems,
-        completedItems,
-        lectureCount: lectureItems,
+        lectureCount,
         completedLectures,
         progress
       };
@@ -61,26 +55,34 @@ router.get('/:subject/chapters', async (req, res) => {
 
     const chaptersWithStats = await Promise.all(chapters.map(async (chapter) => {
       const items = await ContentItem.find({ chapterId: chapter._id });
-      const lectures = items.filter(i => i.type === 'lecture');
-      const notes = items.filter(i => i.type === 'notes');
+      const lectures   = items.filter(i => i.type === 'lecture');
+      const notes      = items.filter(i => i.type === 'notes');
       const worksheets = items.filter(i => i.type === 'worksheet');
-      const completed = items.filter(i => i.completed);
 
-      const totalDuration = lectures.reduce((sum, i) => sum + (i.duration || 0), 0);
-      const watchedDuration = lectures.reduce((sum, i) => sum + (i.currentTime || 0), 0);
-      const progress = items.length > 0 ? Math.round((completed.length / items.length) * 100) : 0;
+      const completedLectures   = lectures.filter(i => i.completed).length;
+      const completedNotes      = notes.filter(i => i.completed).length;
+      const completedWorksheets = worksheets.filter(i => i.completed).length;
+
+      const lectureProgress = lectures.length > 0
+        ? Math.round((completedLectures / lectures.length) * 100)
+        : 0;
+
+      const totalDuration   = lectures.reduce((s, i) => s + (i.duration || 0), 0);
+      const watchedDuration = lectures.reduce((s, i) => s + (i.currentTime || 0), 0);
 
       return {
         ...chapter.toObject(),
         stats: {
-          totalItems: items.length,
-          lectureCount: lectures.length,
-          notesCount: notes.length,
-          worksheetCount: worksheets.length,
-          completedCount: completed.length,
-          progress,
+          totalLectures: lectures.length,
+          completedLectures,
+          lectureProgress,
+          totalNotes: notes.length,
+          completedNotes,
+          totalWorksheets: worksheets.length,
+          completedWorksheets,
           totalDuration,
-          watchedDuration
+          watchedDuration,
+          progress: lectureProgress
         }
       };
     }));

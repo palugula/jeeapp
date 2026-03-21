@@ -24,6 +24,7 @@ export const updateChapter = (id, data) => api.put(`/chapters/${id}`, data);
 export const reorderChapters = (subject, items) => api.post(`/chapters/${subject}/reorder`, { items });
 export const getChapterItems = (id) => api.get(`/chapters/${id}/items`);
 export const addYoutubeVideo = (id, data) => api.post(`/chapters/${id}/items/youtube`, data);
+export const addManualLecture = (id, data) => api.post(`/chapters/${id}/items/manual`, data);
 export const reorderItems = (id, items) => api.post(`/chapters/${id}/items/reorder`, { items });
 
 // Items
@@ -38,10 +39,18 @@ export const getHeatmap = () => api.get('/analytics/heatmap');
 export const getRecentActivity = () => api.get('/analytics/recent');
 
 // Weekly Plan
-export const getWeeklyPlan = () => api.get('/weekly-plan');
+export const getWeeklyPlan = (week) => api.get(`/weekly-plan${week ? `?week=${week}` : ''}`);
 export const getWeekPlan = (weekStart) => api.get(`/weekly-plan/${weekStart}`);
-export const saveWeekPlan = (weekStart, plans) => api.put(`/weekly-plan/${weekStart}`, { plans });
-export const estimateTime = (data) => api.post('/weekly-plan/estimate', data);
+export const addWeekTask = (weekStart, task) => api.post(`/weekly-plan/${weekStart}/tasks`, task);
+export const updateWeekTask = (weekStart, taskId, data) => api.patch(`/weekly-plan/${weekStart}/tasks/${taskId}`, data);
+export const deleteWeekTask = (weekStart, taskId) => api.delete(`/weekly-plan/${weekStart}/tasks/${taskId}`);
+
+// Video Notes
+export const getItemNotes = (itemId) => api.get(`/notes/item/${itemId}`);
+export const addNote = (itemId, data) => api.post(`/notes/item/${itemId}`, data);
+export const updateNote = (id, data) => api.put(`/notes/${id}`, data);
+export const deleteNote = (id) => api.delete(`/notes/${id}`);
+export const getSubjectNotes = (subject) => api.get(`/notes/subject/${subject}`);
 
 // Settings
 export const getSettings = () => api.get('/settings');
