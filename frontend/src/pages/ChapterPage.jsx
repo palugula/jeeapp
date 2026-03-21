@@ -305,14 +305,14 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function NoteRow({ note, item, onDelete }) {
+// Pure display row — no VideoPlayer rendered here; player is lifted to MyNotesTab
+function NoteRow({ note, item, onPlay, onDelete }) {
   const [deleting, setDeleting] = useState(false);
-  const [playerItem, setPlayerItem] = useState(null);
-
   const hasTimestamp = note.timestamp !== null && note.timestamp !== undefined;
-  const canSeek = hasTimestamp && item;
+  const canOpen = !!item;
 
-  const handleDelete = async () => {
+  const handleDelete = async (e) => {
+    e.stopPropagation();
     setDeleting(true);
     try {
       await deleteNote(note._id);
@@ -321,69 +321,50 @@ function NoteRow({ note, item, onDelete }) {
   };
 
   return (
-    <>
-      <div
-        className="flex items-start gap-3 p-3 rounded-lg group transition-colors"
-        style={{ background: '#1A2234' }}
-      >
-        {/* Timestamp badge */}
-        <div className="flex-shrink-0 mt-0.5 w-16">
-          {hasTimestamp ? (
-            <button
-              onClick={() => canSeek && setPlayerItem({ ...item, currentTime: note.timestamp })}
-              disabled={!canSeek}
-              title={canSeek ? `Jump to ${formatTime(note.timestamp)}` : undefined}
-              className={`flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded w-full justify-center transition-colors ${
-                canSeek
-                  ? 'text-primary border border-primary/40 hover:bg-primary hover:text-white cursor-pointer'
-                  : 'text-text-muted border border-transparent cursor-default'
-              }`}
-            >
-              <Clock size={9} />{formatTime(note.timestamp)}
-            </button>
-          ) : (
-            <span className="text-xs text-text-muted pl-1">—</span>
-          )}
-        </div>
-
-        <p className="flex-1 text-sm text-text-card leading-relaxed">{note.content}</p>
-
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          {canSeek && (
-            <button
-              onClick={() => setPlayerItem({ ...item, currentTime: note.timestamp })}
-              className="p-1 rounded text-text-muted hover:text-primary transition-colors"
-              title="Open video here"
-            >
-              <Play size={12} />
-            </button>
-          )}
-          <button onClick={handleDelete} disabled={deleting}
-            className="p-1 rounded text-text-muted hover:text-red-400 transition-colors">
-            <Trash2 size={12} />
-          </button>
-        </div>
+    <div
+      onClick={() => canOpen && onPlay(item, hasTimestamp ? note.timestamp : null)}
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-colors ${canOpen ? 'cursor-pointer hover:bg-primary/10' : ''}`}
+      style={{ background: '#1A2234' }}
+      title={canOpen ? (hasTimestamp ? `Open video at ${formatTime(note.timestamp)}` : 'Open video') : undefined}
+    >
+      {/* Timestamp badge or play icon */}
+      <div className="flex-shrink-0 w-14 flex justify-center">
+        {hasTimestamp ? (
+          <span className="flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded border"
+            style={{ color: '#6366F1', borderColor: 'rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.1)' }}>
+            <Clock size={9} />{formatTime(note.timestamp)}
+          </span>
+        ) : (
+          <span className="opacity-30 group-hover:opacity-60 transition-opacity">
+            <Play size={12} className="text-text-muted" />
+          </span>
+        )}
       </div>
 
-      {playerItem && (
-        <VideoPlayer
-          item={playerItem}
-          onClose={() => setPlayerItem(null)}
-          onComplete={() => setPlayerItem(null)}
-        />
-      )}
-    </>
+      {/* Note content */}
+      <p className="flex-1 text-sm text-text-card leading-relaxed">{note.content}</p>
+
+      {/* Delete */}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className="flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
   );
 }
 
-function ItemNotesGroup({ group, onDeleteNote }) {
+function ItemNotesGroup({ group, onPlay, onDeleteNote }) {
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#262C36' }}>
+    <div className="rounded-lg border" style={{ borderColor: '#262C36' }}>
+      {/* Header */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-t-lg text-left hover:bg-accent transition-colors"
         style={{ background: '#161B22' }}
       >
         {open ? <ChevronDown size={13} className="text-text-muted" /> : <ChevronRight size={13} className="text-text-muted" />}
@@ -394,11 +375,18 @@ function ItemNotesGroup({ group, onDeleteNote }) {
         </span>
       </button>
 
+      {/* Scrollable notes — NO overflow-hidden on parent so VideoPlayer (fixed) can escape */}
       {open && (
-        <div className="overflow-y-auto" style={{ background: '#0F1117', maxHeight: '320px' }}>
-          <div className="p-2 space-y-1.5">
+        <div className="overflow-y-auto rounded-b-lg" style={{ background: '#0F1117', maxHeight: '300px' }}>
+          <div className="p-2 space-y-1">
             {group.notes.map(note => (
-              <NoteRow key={note._id} note={note} item={group.item} onDelete={onDeleteNote} />
+              <NoteRow
+                key={note._id}
+                note={note}
+                item={group.item}
+                onPlay={onPlay}
+                onDelete={onDeleteNote}
+              />
             ))}
           </div>
         </div>
@@ -410,13 +398,21 @@ function ItemNotesGroup({ group, onDeleteNote }) {
 function MyNotesTab({ chapterId }) {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  // VideoPlayer lifted here — outside all scroll containers
+  const [playerItem, setPlayerItem] = useState(null);
 
   useEffect(() => {
+    setLoading(true);
+    setGroups([]);
     getChapterNotes(chapterId)
-      .then(setGroups)
-      .catch(console.error)
+      .then(data => setGroups(data || []))
+      .catch(err => console.error('Chapter notes fetch error:', err))
       .finally(() => setLoading(false));
   }, [chapterId]);
+
+  const handlePlay = (item, timestamp) => {
+    setPlayerItem({ ...item, currentTime: timestamp ?? item.currentTime ?? 0 });
+  };
 
   const handleDeleteNote = (noteId) => {
     setGroups(prev =>
@@ -427,28 +423,46 @@ function MyNotesTab({ chapterId }) {
 
   const totalNotes = groups.reduce((s, g) => s + g.notes.length, 0);
 
-  if (loading) {
-    return <div className="py-8 text-center text-text-muted text-sm">Loading notes…</div>;
-  }
-
-  if (!groups.length) {
-    return (
-      <div className="py-12 text-center text-text-muted">
-        <StickyNote size={36} className="mx-auto mb-2 opacity-20" />
-        <p className="text-sm">No notes yet. Add notes while watching lectures.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-text-muted flex items-center gap-1 pb-1">
-        <Clock size={11} /> {totalNotes} notes — click a timestamp to jump to that moment in the video
-      </p>
-      {groups.map(group => (
-        <ItemNotesGroup key={group.itemId} group={group} onDeleteNote={handleDeleteNote} />
-      ))}
-    </div>
+    <>
+      {loading && (
+        <div className="py-8 text-center text-text-muted text-sm">Loading notes…</div>
+      )}
+
+      {!loading && groups.length === 0 && (
+        <div className="py-12 text-center text-text-muted">
+          <StickyNote size={36} className="mx-auto mb-2 opacity-20" />
+          <p className="text-sm">No notes yet.</p>
+          <p className="text-xs mt-1 opacity-60">Open a lecture, add notes from the panel on the right.</p>
+        </div>
+      )}
+
+      {!loading && groups.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs text-text-muted flex items-center gap-1 pb-1">
+            <Clock size={11} />
+            {totalNotes} notes — click any row to open video, timestamp rows jump to that moment
+          </p>
+          {groups.map(group => (
+            <ItemNotesGroup
+              key={group.itemId}
+              group={group}
+              onPlay={handlePlay}
+              onDeleteNote={handleDeleteNote}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* VideoPlayer renders at this level — completely outside scroll containers */}
+      {playerItem && (
+        <VideoPlayer
+          item={playerItem}
+          onClose={() => setPlayerItem(null)}
+          onComplete={() => setPlayerItem(null)}
+        />
+      )}
+    </>
   );
 }
 

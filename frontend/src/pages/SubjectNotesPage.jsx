@@ -13,20 +13,14 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Single note row — timestamp is clickable when item has video
-function NoteRow({ note, item, onDelete }) {
+// Pure display row — no VideoPlayer here, player is lifted to page level
+function NoteRow({ note, item, onPlay, onDelete }) {
   const [deleting, setDeleting] = useState(false);
-  const [playerItem, setPlayerItem] = useState(null);
-
   const hasTimestamp = note.timestamp !== null && note.timestamp !== undefined;
-  const canSeek = hasTimestamp && item && (item.itemType === 'local_video' || item.itemType === 'youtube' || item.itemType === 'manual');
+  const canOpen = !!item;
 
-  const handleTimestampClick = () => {
-    if (!canSeek) return;
-    setPlayerItem({ ...item, currentTime: note.timestamp });
-  };
-
-  const handleDelete = async () => {
+  const handleDelete = async (e) => {
+    e.stopPropagation();
     setDeleting(true);
     try {
       await deleteNote(note._id);
@@ -38,77 +32,52 @@ function NoteRow({ note, item, onDelete }) {
   };
 
   return (
-    <>
-      <div
-        className="flex items-start gap-3 p-3 rounded-lg group transition-colors hover:bg-opacity-80"
-        style={{ background: '#1A2234' }}
-      >
-        {/* Timestamp badge — clickable if video available */}
-        <div className="flex-shrink-0 mt-0.5 w-16">
-          {hasTimestamp ? (
-            <button
-              onClick={handleTimestampClick}
-              disabled={!canSeek}
-              title={canSeek ? `Jump to ${formatTime(note.timestamp)}` : 'No video'}
-              className={`flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded w-full justify-center transition-colors ${
-                canSeek
-                  ? 'hover:bg-primary text-primary border border-primary/40 hover:text-white cursor-pointer'
-                  : 'text-text-muted border border-transparent cursor-default'
-              }`}
-            >
-              <Clock size={9} />
-              {formatTime(note.timestamp)}
-            </button>
-          ) : (
-            <span className="text-xs text-text-muted pl-1">—</span>
-          )}
-        </div>
-
-        {/* Content */}
-        <p className="flex-1 text-sm text-text-card leading-relaxed">{note.content}</p>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          {canSeek && (
-            <button
-              onClick={handleTimestampClick}
-              className="p-1 rounded text-text-muted hover:text-primary transition-colors"
-              title="Open video at this time"
-            >
-              <Play size={12} />
-            </button>
-          )}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="p-1 rounded text-text-muted hover:text-red-400 transition-colors"
+    <div
+      onClick={() => canOpen && onPlay(item, hasTimestamp ? note.timestamp : null)}
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-colors ${canOpen ? 'cursor-pointer hover:bg-primary/10' : ''}`}
+      style={{ background: '#1A2234' }}
+      title={canOpen ? (hasTimestamp ? `Open video at ${formatTime(note.timestamp)}` : 'Open video') : undefined}
+    >
+      {/* Timestamp or play icon */}
+      <div className="flex-shrink-0 w-14 flex justify-center">
+        {hasTimestamp ? (
+          <span
+            className="flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded border"
+            style={{ color: '#6366F1', borderColor: 'rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.1)' }}
           >
-            <Trash2 size={12} />
-          </button>
-        </div>
+            <Clock size={9} />{formatTime(note.timestamp)}
+          </span>
+        ) : (
+          <span className="opacity-30 group-hover:opacity-60 transition-opacity">
+            <Play size={12} className="text-text-muted" />
+          </span>
+        )}
       </div>
 
-      {/* VideoPlayer spawned at note timestamp */}
-      {playerItem && (
-        <VideoPlayer
-          item={playerItem}
-          onClose={() => setPlayerItem(null)}
-          onComplete={() => setPlayerItem(null)}
-        />
-      )}
-    </>
+      {/* Content */}
+      <p className="flex-1 text-sm text-text-card leading-relaxed">{note.content}</p>
+
+      {/* Delete */}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className="flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
   );
 }
 
-function ItemSection({ itemGroup, onDeleteNote }) {
+function ItemSection({ itemGroup, onPlay, onDeleteNote }) {
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#262C36' }}>
-      {/* Item header */}
+    <div className="rounded-lg border" style={{ borderColor: '#262C36' }}>
+      {/* Header */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-t-lg text-left hover:bg-accent transition-colors"
         style={{ background: '#161B22' }}
       >
         {open
@@ -123,18 +92,19 @@ function ItemSection({ itemGroup, onDeleteNote }) {
         </span>
       </button>
 
-      {/* Scrollable notes list */}
+      {/* Scrollable notes list — no overflow-hidden on parent */}
       {open && (
         <div
-          className="overflow-y-auto"
-          style={{ background: '#0F1117', maxHeight: '340px' }}
+          className="overflow-y-auto rounded-b-lg"
+          style={{ background: '#0F1117', maxHeight: '300px' }}
         >
-          <div className="p-2 space-y-1.5">
+          <div className="p-2 space-y-1">
             {itemGroup.notes.map(note => (
               <NoteRow
                 key={note._id}
                 note={note}
                 item={itemGroup.item}
+                onPlay={onPlay}
                 onDelete={onDeleteNote}
               />
             ))}
@@ -145,15 +115,15 @@ function ItemSection({ itemGroup, onDeleteNote }) {
   );
 }
 
-function ChapterSection({ chapter, onDeleteNote }) {
+function ChapterSection({ chapter, onPlay, onDeleteNote }) {
   const [open, setOpen] = useState(true);
   const totalNotes = chapter.items.reduce((s, i) => s + i.notes.length, 0);
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ background: '#161B22', borderColor: '#262C36' }}>
+    <div className="rounded-xl border" style={{ background: '#161B22', borderColor: '#262C36' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-accent transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left hover:bg-accent transition-colors"
       >
         {open
           ? <ChevronDown size={15} className="text-text-muted flex-shrink-0" />
@@ -172,6 +142,7 @@ function ChapterSection({ chapter, onDeleteNote }) {
             <ItemSection
               key={itemGroup.itemId}
               itemGroup={itemGroup}
+              onPlay={onPlay}
               onDeleteNote={onDeleteNote}
             />
           ))}
@@ -186,11 +157,13 @@ export default function SubjectNotesPage() {
   const navigate = useNavigate();
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
+  // VideoPlayer lifted to page level — outside all scroll/overflow containers
+  const [playerItem, setPlayerItem] = useState(null);
 
   const load = async () => {
     try {
       const data = await getSubjectNotes(subject);
-      setChapters(data);
+      setChapters(data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -199,6 +172,10 @@ export default function SubjectNotesPage() {
   };
 
   useEffect(() => { load(); }, [subject]);
+
+  const handlePlay = (item, timestamp) => {
+    setPlayerItem({ ...item, currentTime: timestamp ?? item.currentTime ?? 0 });
+  };
 
   const handleDeleteNote = (noteId) => {
     setChapters(prev =>
@@ -232,25 +209,25 @@ export default function SubjectNotesPage() {
         <p className="text-text-muted text-sm mt-1">
           {totalNotes} notes across {chapters.length} chapters
         </p>
-        <p className="text-xs text-text-muted mt-2 flex items-center gap-1">
+        <p className="text-xs mt-2 flex items-center gap-1" style={{ color: '#6366F1' }}>
           <Clock size={11} />
-          Click a timestamp badge to open the video at that exact moment
+          Click any note row to open the video · timestamp rows jump to that exact moment
         </p>
       </div>
 
-      {/* Loading skeletons */}
+      {/* Loading */}
       {loading && (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="h-24 rounded-xl animate-pulse" style={{ background: '#161B22' }} />)}
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty */}
       {!loading && chapters.length === 0 && (
         <div className="text-center py-16 text-text-muted">
           <StickyNote size={44} className="mx-auto mb-3 opacity-20" />
           <p className="font-medium">No notes yet</p>
-          <p className="text-sm mt-1">Open a lecture and add notes while watching.</p>
+          <p className="text-sm mt-1">Open a lecture and add notes from the panel on the right.</p>
         </div>
       )}
 
@@ -259,9 +236,19 @@ export default function SubjectNotesPage() {
         <ChapterSection
           key={chapter.chapterId}
           chapter={chapter}
+          onPlay={handlePlay}
           onDeleteNote={handleDeleteNote}
         />
       ))}
+
+      {/* VideoPlayer at page level — never clipped by scroll containers */}
+      {playerItem && (
+        <VideoPlayer
+          item={playerItem}
+          onClose={() => setPlayerItem(null)}
+          onComplete={() => setPlayerItem(null)}
+        />
+      )}
     </div>
   );
 }
